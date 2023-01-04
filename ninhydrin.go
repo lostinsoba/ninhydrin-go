@@ -7,21 +7,17 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
 // defaultBaseURL is a default URL of Ninhydrin API
-const defaultBaseURL = "http://ninhydrin:8080/v1"
-
-// workerIDHeader indicates that client is being used for worker
-const workerIDHeader = "X-Ninhydrin-Worker-ID"
+const defaultBaseURL = "http://localhost:8080/v1"
 
 // getDefaultHeaders returns collection of default headers
 func getDefaultHeaders() map[string]string {
 	return map[string]string{
 		"User-Agent":   "Ninhydrin Go API Client",
-		"Content-Type": "application/json",
+		"Content-Type": "application/json; charset=utf-8",
 	}
 }
 
@@ -44,10 +40,7 @@ func New(options ...Option) *Client {
 		opt(client)
 	}
 
-	client.Tag = newTagService(client, "/tag")
-	client.Pool = newPoolService(client, "/pool")
 	client.Task = newTaskService(client, "/task")
-	client.Worker = newWorkerService(client, "/worker")
 
 	return client
 }
@@ -58,10 +51,7 @@ type Client struct {
 	headers    map[string]string
 	httpClient *http.Client
 
-	Tag    *tagService
-	Pool   *poolService
-	Task   *taskService
-	Worker *workerService
+	Task *taskService
 }
 
 // Option defines an option for a Client
@@ -82,9 +72,9 @@ func OptionHTTPClient(httpClient *http.Client) func(*Client) {
 	return func(c *Client) { c.httpClient = httpClient }
 }
 
-// OptionWorkerID sets worker ID header
-func OptionWorkerID(workerID string) func(*Client) {
-	return func(c *Client) { c.headers[workerIDHeader] = workerID }
+// OptionHeader adds or sets existing header value
+func OptionHeader(key, value string) func(*Client) {
+	return func(c *Client) { c.headers[key] = value }
 }
 
 // controller is a controller that provides basic http methods for every service
@@ -99,6 +89,17 @@ type controller struct {
 func (ctrl *controller) GET(ctx context.Context, entries ...string) ([]byte, error) {
 	path := ctrl.pathJoin(entries...)
 	return ctrl.processRequest(ctx, http.MethodGet, path, nil)
+}
+
+type queryArg struct {
+	k, v string
+}
+
+// GETWithQuery performs GET request with query
+// GETWithQuery(ctx, query, "12345") will perform GET "/serviceEndpoint/12345?=query" request
+func (ctrl *controller) GETWithQuery(ctx context.Context, query []queryArg, entries ...string) ([]byte, error) {
+	path := ctrl.pathJoin(entries...)
+	return ctrl.processRequest(ctx, http.MethodGet, path, nil, query...)
 }
 
 // DELETE performs DELETE request
@@ -130,23 +131,30 @@ func (ctrl *controller) PUT(ctx context.Context, body io.Reader, entries ...stri
 }
 
 func (ctrl *controller) pathJoin(entries ...string) string {
-	var res = ctrl.client.baseURL + ctrl.endpoint
+	var res strings.Builder
+	res.WriteString(ctrl.client.baseURL)
+	res.WriteString(ctrl.endpoint)
 	for _, entry := range entries {
-		if !strings.HasSuffix(res, "/") {
-			res += "/"
-		}
-		res += url.PathEscape(entry)
+		res.WriteString("/")
+		res.WriteString(entry)
 	}
-	return res
+	return res.String()
 }
 
-func (ctrl *controller) processRequest(ctx context.Context, method string, url string, body io.Reader) ([]byte, error) {
+func (ctrl *controller) processRequest(ctx context.Context, method string, url string, body io.Reader, query ...queryArg) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("invalid request parameters: %w", err)
 	}
 	for k, v := range ctrl.client.headers {
 		request.Header.Set(k, v)
+	}
+	if len(query) > 0 {
+		q := request.URL.Query()
+		for _, arg := range query {
+			q.Set(arg.k, arg.v)
+		}
+		request.URL.RawQuery = q.Encode()
 	}
 	response, err := ctrl.client.httpClient.Do(request)
 	if response != nil {
