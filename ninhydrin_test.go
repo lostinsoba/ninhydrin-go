@@ -3,6 +3,7 @@ package ninhydrin
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,33 @@ import (
 	"reflect"
 	"testing"
 )
+
+func flushAll(api *Client, ctx context.Context) (err error) {
+	namespaces, err := api.Namespace.List(ctx)
+	if err != nil {
+		return
+	}
+	for _, namespace := range namespaces {
+		var (
+			tasks []*Task
+		)
+		tasks, err = api.Task.List(ctx, namespace.ID)
+		if err != nil {
+			return
+		}
+		for _, task := range tasks {
+			err = api.Task.Delete(ctx, task.ID)
+			if err != nil {
+				return
+			}
+		}
+		err = api.Namespace.Delete(ctx, namespace.ID)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
 
 type logger interface {
 	Printf(format string, v ...interface{})

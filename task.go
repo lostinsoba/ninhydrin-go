@@ -19,6 +19,7 @@ type TaskStatus string
 
 type Task struct {
 	ID          string     `json:"id"`
+	NamespaceID string     `json:"namespace_id"`
 	Timeout     int64      `json:"timeout,omitempty"`
 	RetriesLeft int        `json:"retries_left,omitempty"`
 	Status      TaskStatus `json:"status,omitempty"`
@@ -39,26 +40,38 @@ func newTaskService(client *Client, endpoint string) *taskService {
 	}
 }
 
-// ListIDs returns list of task IDs
-func (ts *taskService) ListIDs(ctx context.Context) (ids []string, err error) {
-	resp, err := ts.controller.GET(ctx)
-	if err != nil {
-		return
+// List returns list of tasks
+func (ts *taskService) List(ctx context.Context, namespaceID string) ([]*Task, error) {
+	query := []queryArg{
+		{
+			k: "namespace_id",
+			v: namespaceID,
+		},
 	}
-	var data idListData
+	resp, err := ts.controller.GETWithQuery(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	var data taskListData
 	err = json.Unmarshal(resp, &data)
-	ids = data.List
-	return
+	if err != nil {
+		return nil, err
+	}
+	return data.List, err
 }
 
 // Read returns task by given ID
-func (ts *taskService) Read(ctx context.Context, taskID string) (task *Task, err error) {
+func (ts *taskService) Read(ctx context.Context, taskID string) (*Task, error) {
 	resp, err := ts.controller.GET(ctx, taskID)
 	if err != nil {
-		return
+		return nil, err
 	}
+	var task *Task
 	err = json.Unmarshal(resp, &task)
-	return
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 // Delete removes task by given ID
@@ -78,9 +91,13 @@ func (ts *taskService) Register(ctx context.Context, task *Task) error {
 	return err
 }
 
-// CaptureIDs returns list of task IDs
-func (ts *taskService) CaptureIDs(ctx context.Context, limit int) (ids []string, err error) {
+// Capture returns list of tasks
+func (ts *taskService) Capture(ctx context.Context, namespaceID string, limit int) ([]*Task, error) {
 	query := []queryArg{
+		{
+			k: "namespace_id",
+			v: namespaceID,
+		},
 		{
 			k: "limit",
 			v: strconv.Itoa(limit),
@@ -88,12 +105,14 @@ func (ts *taskService) CaptureIDs(ctx context.Context, limit int) (ids []string,
 	}
 	resp, err := ts.controller.GETWithQuery(ctx, query, "capture")
 	if err != nil {
-		return
+		return nil, err
 	}
-	var data idListData
+	var data taskListData
 	err = json.Unmarshal(resp, &data)
-	ids = data.List
-	return
+	if err != nil {
+		return nil, err
+	}
+	return data.List, nil
 }
 
 // Release updates tasks with given status
@@ -116,6 +135,6 @@ type releaseData struct {
 	TaskIDs []string   `json:"task_ids"`
 }
 
-type idListData struct {
-	List []string `json:"list"`
+type taskListData struct {
+	List []*Task `json:"list"`
 }

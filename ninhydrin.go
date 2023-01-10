@@ -40,6 +40,7 @@ func New(options ...Option) *Client {
 		opt(client)
 	}
 
+	client.Namespace = newNamespaceService(client, "/namespace")
 	client.Task = newTaskService(client, "/task")
 
 	return client
@@ -51,7 +52,8 @@ type Client struct {
 	headers    map[string]string
 	httpClient *http.Client
 
-	Task *taskService
+	Namespace *namespaceService
+	Task      *taskService
 }
 
 // Option defines an option for a Client
